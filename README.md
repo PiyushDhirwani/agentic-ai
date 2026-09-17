@@ -1,7 +1,7 @@
 # agentic-ai
 
 A ChatGPT-style chat service on **OpenRouter**, with conversations persisted in
-**Neon Postgres**, a hot **Upstash Redis** sliding window in front of it, and a
+**Neon Postgres**, a hot **Redis** sliding window in front of it, and a
 Next.js UI — deployable to **Vercel** as-is.
 
 ## How it works
@@ -11,7 +11,7 @@ browser ──POST /api/chat (SSE)──> Next route handler
                                       │
                     ┌─────────────────┼──────────────────┐
                     ▼                 ▼                  ▼
-            Upstash Redis        OpenRouter          Neon Postgres
+               Redis             OpenRouter          Neon Postgres
          (last 50 turns, hot)   (primary model,     (durable transcript,
                                  then fallbacks)      source of truth)
 ```
@@ -52,8 +52,7 @@ Full annotated list in [`.env.example`](.env.example). Summary:
 | --- | --- | --- | --- |
 | `OPENROUTER_API_KEY` | **yes** | — | openrouter.ai/keys |
 | `DATABASE_URL` | **yes** | — | Neon Console → Connection string (**pooled**, host has `-pooler`) |
-| `UPSTASH_REDIS_REST_URL` | no | — | Upstash Console → your DB → **REST API** (not `redis://`) |
-| `UPSTASH_REDIS_REST_TOKEN` | no | — | same panel; set both or neither |
+| `REDIS_URL` | no | — | `redis://` or `rediss://` connection string |
 | `OPENROUTER_MODEL` | no | `google/gemma-4-31b-it:free` | any id from openrouter.ai/models |
 | `OPENROUTER_FALLBACK_MODELS` | no | `google/gemma-4-26b-a4b-it:free` | comma-separated, tried in order |
 | `OPENROUTER_BASE_URL` | no | `https://openrouter.ai/api/v1` | point at a proxy/gateway |
@@ -65,7 +64,7 @@ Full annotated list in [`.env.example`](.env.example). Summary:
 | `NEXT_PUBLIC_APP_URL` | no | `VERCEL_URL`, else localhost | OpenRouter `HTTP-Referer` |
 | `NEXT_PUBLIC_APP_TITLE` | no | `agentic-ai` | OpenRouter `X-Title` |
 
-Without Upstash the app still runs — every turn just reads its window from
+Without `REDIS_URL` the app still runs — every turn just reads its window from
 Postgres instead of cache. `GET /api/health` reports which dependencies resolved.
 
 ## API
@@ -114,8 +113,8 @@ curl -N http://localhost:3000/api/chat \
 ## Deploying to Vercel
 
 1. Add the env vars from `.env.example` in **Project → Settings → Environment Variables**
-   (Neon and Upstash can also be attached through the Vercel Marketplace, which
-   injects `DATABASE_URL` and the Upstash pair for you).
+   (Neon and Redis can also be attached through the Vercel Marketplace, which
+   injects the connection strings for you).
 2. Set `NEXT_PUBLIC_APP_URL` to the production URL — it becomes the `HTTP-Referer`
    OpenRouter attributes traffic to.
 3. Run `npm run db:migrate` once against the production `DATABASE_URL`.

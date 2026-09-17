@@ -5,13 +5,12 @@ import { cacheKeys } from "./keys";
 
 /**
  * The Redis half of the sliding window. Every operation is best-effort: a
- * failure logs and reports a miss so the caller falls back to Postgres.
+ * failure logs and reports a miss, so the caller falls back to Postgres.
  */
 
-function deserialize(raw: unknown): Message | null {
+function deserialize(raw: string): Message | null {
   try {
-    // Upstash auto-parses JSON, so a value may already be an object.
-    const value = typeof raw === "string" ? JSON.parse(raw) : raw;
+    const value = JSON.parse(raw);
     if (value && typeof value === "object" && "role" in value) return value as Message;
     return null;
   } catch {
@@ -19,7 +18,14 @@ function deserialize(raw: unknown): Message | null {
   }
 }
 
-/** Returns null on a miss — distinct from [] which is a real empty window. */
+/** ioredis pipelines report per-command errors instead of throwing. */
+function logPipelineErrors(results: [Error | null, unknown][] | null, operation: string): void {
+  for (const [error] of results ?? []) {
+    if (error) console.error(`[cache] ${operation} command failed:`, error.message);
+  }
+}
+
+/** Returns null on a miss — distinct from [], which is a real empty window. */
 export async function read(conversationId: string): Promise<Message[] | null> {
   const client = redis();
   if (!client) return null;
@@ -27,10 +33,10 @@ export async function read(conversationId: string): Promise<Message[] | null> {
   try {
     const [warm, raw] = await Promise.all([
       client.exists(cacheKeys.warm(conversationId)),
-      client.lrange<unknown>(cacheKeys.window(conversationId), -env.chat.historyMessages, -1),
+      client.lrange(cacheKeys.window(conversationId), -env.chat.historyMessages, -1),
     ]);
     if (!warm) return null;
-    return (raw ?? []).map(deserialize).filter((m): m is Message => m !== null);
+    return raw.map(deserialize).filter((message): message is Message => message !== null);
   } catch (error) {
     console.error("[cache] read failed:", error);
     return null;
@@ -44,14 +50,16 @@ export async function fill(conversationId: string, messages: Message[]): Promise
 
   try {
     const windowKey = cacheKeys.window(conversationId);
+    const ttl = env.redis.ttlSeconds;
+
     const pipeline = client.pipeline();
     pipeline.del(windowKey);
     if (messages.length > 0) {
-      pipeline.rpush(windowKey, ...messages.map((m) => JSON.stringify(m)));
-      pipeline.expire(windowKey, env.redis.ttlSeconds);
+      pipeline.rpush(windowKey, ...messages.map((message) => JSON.stringify(message)));
+      pipeline.expire(windowKey, ttl);
     }
-    pipeline.set(cacheKeys.warm(conversationId), 1, { ex: env.redis.ttlSeconds });
-    await pipeline.exec();
+    pipeline.set(cacheKeys.warm(conversationId), "1", "EX", ttl);
+    logPipelineErrors(await pipeline.exec(), "fill");
   } catch (error) {
     console.error("[cache] fill failed:", error);
   }
@@ -71,12 +79,14 @@ export async function append(conversationId: string, message: Message): Promise<
     if (!(await client.exists(warmKey))) return;
 
     const windowKey = cacheKeys.window(conversationId);
+    const ttl = env.redis.ttlSeconds;
+
     const pipeline = client.pipeline();
     pipeline.rpush(windowKey, JSON.stringify(message));
     pipeline.ltrim(windowKey, -env.chat.historyMessages, -1);
-    pipeline.expire(windowKey, env.redis.ttlSeconds);
-    pipeline.expire(warmKey, env.redis.ttlSeconds);
-    await pipeline.exec();
+    pipeline.expire(windowKey, ttl);
+    pipeline.expire(warmKey, ttl);
+    logPipelineErrors(await pipeline.exec(), "append");
   } catch (error) {
     console.error("[cache] append failed; Postgres already has the message:", error);
   }

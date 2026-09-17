@@ -7,7 +7,7 @@
 export const APP = {
   name: "agentic-ai",
   description:
-    "A chat service on OpenRouter, with Neon-backed history and an Upstash sliding window.",
+    "A chat service on OpenRouter, with Neon-backed history and a Redis sliding window.",
   localUrl: "http://localhost:3000",
 } as const;
 
@@ -41,6 +41,19 @@ export const LIMITS = {
 
 export const CACHE_KEYS = {
   prefix: "chat:conv",
+} as const;
+
+/**
+ * Connection tuning for a serverless caller. Every timeout is short on
+ * purpose: a slow cache must degrade to Postgres rather than spend the
+ * function's budget waiting.
+ */
+export const REDIS = {
+  connectTimeoutMs: 5_000,
+  commandTimeoutMs: 3_000,
+  maxRetriesPerRequest: 1,
+  maxReconnectAttempts: 2,
+  keepAliveMs: 30_000,
 } as const;
 
 /** Server-Sent Events wire format, shared by the route and the browser reader. */

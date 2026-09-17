@@ -66,15 +66,12 @@ export const env = {
   },
 
   redis: {
+    /** A standard connection string: redis:// or rediss:// for TLS. */
     get url() {
-      return optional("UPSTASH_REDIS_REST_URL");
+      return optional("REDIS_URL");
     },
-    get token() {
-      return optional("UPSTASH_REDIS_REST_TOKEN");
-    },
-    /** Both halves are needed; one alone is not a usable configuration. */
     get isConfigured() {
-      return Boolean(this.url && this.token);
+      return Boolean(this.url);
     },
     get ttlSeconds() {
       return int("CACHE_TTL_SECONDS", DEFAULTS.cacheTtlSeconds);

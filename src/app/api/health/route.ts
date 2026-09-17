@@ -25,6 +25,7 @@ async function checkRedis(): Promise<Check> {
   const client = redis();
   if (!client) return { state: "not_configured", detail: "History reads fall back to Postgres." };
   try {
+    // lazyConnect means this PING is what opens the connection.
     await client.ping();
     return { state: "ok" };
   } catch (err) {
