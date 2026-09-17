@@ -1,3 +1,6 @@
+// Build-time guard: importing this from a client component is an error.
+// Nothing here carries a NEXT_PUBLIC_ prefix, so none of it may be bundled.
+import "server-only";
 import { APP, DEFAULTS, OPENROUTER } from "./constants";
 
 /**
@@ -93,15 +96,19 @@ export const env = {
   },
 
   app: {
-    /** Sent to OpenRouter as HTTP-Referer for attribution. */
+    /**
+     * Sent to OpenRouter as HTTP-Referer for attribution. Read on the server
+     * only, so it is deliberately not NEXT_PUBLIC_ — that prefix would inline
+     * the value into the browser bundle for no benefit.
+     */
     get url() {
-      const explicit = optional("NEXT_PUBLIC_APP_URL");
+      const explicit = optional("APP_URL");
       if (explicit) return explicit;
       const vercel = optional("VERCEL_URL");
       return vercel ? `https://${vercel}` : APP.localUrl;
     },
     get title() {
-      return optional("NEXT_PUBLIC_APP_TITLE") ?? APP.name;
+      return optional("APP_TITLE") ?? APP.name;
     },
   },
 };

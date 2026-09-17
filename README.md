@@ -78,8 +78,8 @@ Full annotated list in [`.env.example`](.env.example). Summary:
 | `HISTORY_TURNS` | no | `50` | exchanges replayed (×2 = messages) |
 | `CACHE_TTL_SECONDS` | no | `86400` | idle lifetime of a cached window |
 | `SYSTEM_PROMPT` | no | none | prepended to every conversation |
-| `NEXT_PUBLIC_APP_URL` | no | `VERCEL_URL`, else localhost | OpenRouter `HTTP-Referer` |
-| `NEXT_PUBLIC_APP_TITLE` | no | `agentic-ai` | OpenRouter `X-Title` |
+| `APP_URL` | no | `VERCEL_URL`, else localhost | OpenRouter `HTTP-Referer` (server-side only) |
+| `APP_TITLE` | no | `agentic-ai` | OpenRouter `X-Title` |
 
 Without `REDIS_URL` the app still runs — every turn just reads its window from
 Postgres instead of cache. `GET /api/health` reports which dependencies resolved.
@@ -132,8 +132,9 @@ curl -N http://localhost:3000/api/chat \
 1. Add the env vars from `.env.example` in **Project → Settings → Environment Variables**
    (Neon and Redis can also be attached through the Vercel Marketplace, which
    injects the connection strings for you).
-2. Set `NEXT_PUBLIC_APP_URL` to the production URL — it becomes the `HTTP-Referer`
-   OpenRouter attributes traffic to.
+2. Set `APP_URL` to the production URL — it becomes the `HTTP-Referer`
+   OpenRouter attributes traffic to. (No `NEXT_PUBLIC_` prefix: it is read
+   server-side only, and `config/env.ts` imports `server-only` to enforce that.)
 3. Run `npm run db:migrate` once against the production `DATABASE_URL`.
 4. Push, or `vercel --prod`.
 
