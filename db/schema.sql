@@ -1,6 +1,5 @@
 -- Schema for the chat service. Safe to run repeatedly.
-
-CREATE EXTENSION IF NOT EXISTS pgcrypto;
+-- Requires PostgreSQL 13+, where gen_random_uuid() is in core (no pgcrypto).
 
 CREATE TABLE IF NOT EXISTS conversations (
   id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),

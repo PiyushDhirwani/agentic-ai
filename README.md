@@ -44,6 +44,23 @@ npm run db:migrate             # creates the tables in Neon
 npm run dev                    # http://localhost:3000
 ```
 
+### Schema and migrations
+
+There is **no ORM**. Queries are hand-written SQL through
+`@neondatabase/serverless`, one repository per table under `src/server/db/`.
+
+The schema lives in [`db/schema.sql`](db/schema.sql) and is applied by a script,
+so nothing needs to be pasted into the Neon SQL Editor:
+
+```bash
+npm run db:migrate                                  # uses .env.local
+DATABASE_URL="postgresql://..." npm run db:migrate  # or pass it inline
+```
+
+Every statement is `IF NOT EXISTS`, so re-running is safe and is how you apply
+the schema to a new branch or environment. Requires PostgreSQL 13+, where
+`gen_random_uuid()` is in core — Neon is well past that.
+
 ### Environment
 
 Full annotated list in [`.env.example`](.env.example). Summary:
