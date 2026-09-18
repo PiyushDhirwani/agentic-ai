@@ -48,9 +48,14 @@ export const env = {
     get baseUrl() {
       return (optional("OPENROUTER_BASE_URL") ?? OPENROUTER.baseUrl).replace(/\/+$/, "");
     },
+    /**
+     * Bootstrap model. The catalogue in Postgres is the real source; this is
+     * used only when the models table is empty or unreachable.
+     */
     get primaryModel() {
       return optional("OPENROUTER_MODEL") ?? OPENROUTER.defaultModel;
     },
+    /** Bootstrap fallbacks, same caveat as primaryModel. */
     get fallbackModels() {
       return csv("OPENROUTER_FALLBACK_MODELS", OPENROUTER.defaultFallbackModels);
     },

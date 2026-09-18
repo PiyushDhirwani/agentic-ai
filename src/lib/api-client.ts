@@ -1,6 +1,6 @@
 import { API_ROUTES } from "@/config/constants";
 import { frameData, isDone, takeLines, textChunks } from "@/lib/sse";
-import type { ChatStreamEvent, Conversation, Message } from "@/models";
+import type { ChatStreamEvent, Conversation, ModelOption } from "@/models";
 
 /**
  * Browser-side access to the API. Components call these instead of holding
@@ -12,19 +12,17 @@ async function parseError(response: Response, fallback: string): Promise<string>
   return body?.error ?? fallback;
 }
 
+export async function listModels(): Promise<{ models: ModelOption[]; defaultModel: string }> {
+  const response = await fetch(API_ROUTES.models);
+  if (!response.ok) throw new Error(await parseError(response, "Could not load models."));
+  return response.json();
+}
+
 export async function listConversations(): Promise<Conversation[]> {
   const response = await fetch(API_ROUTES.conversations);
   if (!response.ok) throw new Error(await parseError(response, "Could not load conversations."));
   const data = await response.json();
   return data.conversations ?? [];
-}
-
-export async function getConversation(
-  id: string,
-): Promise<{ conversation: Conversation; messages: Message[] }> {
-  const response = await fetch(API_ROUTES.conversation(id));
-  if (!response.ok) throw new Error(await parseError(response, "Could not load that conversation."));
-  return response.json();
 }
 
 export async function deleteConversation(id: string): Promise<void> {

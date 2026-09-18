@@ -14,8 +14,9 @@ export const APP = {
 export const OPENROUTER = {
   baseUrl: "https://openrouter.ai/api/v1",
   chatCompletionsPath: "/chat/completions",
-  defaultModel: "google/gemma-4-31b-it:free",
-  defaultFallbackModels: "google/gemma-4-26b-a4b-it:free",
+  /** Bootstrap only: used when the models table is empty or unreachable. */
+  defaultModel: "nvidia/nemotron-3-ultra-550b-a55b:free",
+  defaultFallbackModels: "nvidia/nemotron-3.5-lightning:free,deepseek/deepseek-v4-flash-0731:free",
   /** Statuses where advancing to the next model in the chain is worthwhile. */
   retryableStatuses: [402, 408, 409, 429] as readonly number[],
 } as const;
@@ -24,6 +25,21 @@ export const DEFAULTS = {
   /** User/assistant exchanges replayed as context. */
   historyTurns: 50,
   cacheTtlSeconds: 60 * 60 * 24,
+  /**
+   * The model catalogue is cached briefly, not for a day: enabling or
+   * disabling a model should take effect within about a minute without a
+   * deploy or a manual cache flush.
+   */
+  modelsCacheTtlSeconds: 60,
+  /**
+   * In-process memo in front of Redis, so repeated reads inside one warm
+   * container cost nothing. Short, because a container cannot be invalidated
+   * remotely: POST /api/models clears Redis and the container that served it,
+   * and every other container catches up within this window.
+   */
+  modelsMemoTtlSeconds: 30,
+  /** Bootstrap results are memoised briefly so recovery is quick. */
+  modelsBootstrapMemoTtlSeconds: 5,
   requestTimeoutMs: 55_000,
   reasoningEnabled: true,
 } as const;
@@ -41,6 +57,7 @@ export const LIMITS = {
 
 export const CACHE_KEYS = {
   prefix: "chat:conv",
+  modelsKey: "chat:models",
 } as const;
 
 /**
@@ -71,9 +88,16 @@ export const SSE = {
   },
 } as const;
 
+/** Page routes. A conversation is addressable so its URL can be shared. */
+export const ROUTES = {
+  newChat: "/",
+  conversation: (id: string) => `/c/${id}`,
+} as const;
+
 /** Client-side paths. Keeps route strings out of components. */
 export const API_ROUTES = {
   chat: "/api/chat",
+  models: "/api/models",
   conversations: "/api/conversations",
   conversation: (id: string) => `/api/conversations/${id}`,
   health: "/api/health",

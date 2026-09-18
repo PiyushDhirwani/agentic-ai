@@ -12,6 +12,7 @@ import {
 } from "@/models";
 import { conversations as conversationsRepo } from "@/server/db";
 import { complete, streamCompletion } from "@/server/openrouter";
+import { getCatalogue, resolveChain } from "./models.service";
 import { append, getWindow, toChatMessages } from "./history.service";
 
 /**
@@ -40,7 +41,8 @@ export async function resolveConversationId(request: TurnRequest): Promise<strin
   if (request.conversationId) {
     return (await conversationsRepo.ensure(request.conversationId)).id;
   }
-  const created = await conversationsRepo.create(deriveTitle(request.message), request.model);
+  const model = request.model ?? (await getCatalogue()).defaultModel;
+  const created = await conversationsRepo.create(deriveTitle(request.message), model);
   return created.id;
 }
 
@@ -109,7 +111,8 @@ export async function runTurn(
   prompt: Prompt,
   signal?: AbortSignal,
 ): Promise<CompletedTurn> {
-  const completion = await complete(prompt.messages, request.model, signal);
+  const chain = await resolveChain(request.model);
+  const completion = await complete(prompt.messages, chain, signal);
   const assistant = await persistTurn(conversationId, request.message, {
     content: completion.content,
     reasoningDetails: completion.reasoningDetails,
@@ -137,14 +140,16 @@ export async function* streamTurn(
 ): AsyncGenerator<ChatStreamEvent> {
   yield { type: "start", conversationId, historyMessages: prompt.historyCount };
 
+  const chain = await resolveChain(request.model);
+
   let content = "";
   let reasoningDetails: ReasoningDetail[] | null = null;
-  let model = request.model ?? env.openRouter.primaryModel;
+  let model = chain[0] ?? env.openRouter.primaryModel;
   let usage: Usage = EMPTY_USAGE;
   let completed = false;
 
   try {
-    for await (const event of streamCompletion(prompt.messages, request.model, signal)) {
+    for await (const event of streamCompletion(prompt.messages, chain, signal)) {
       switch (event.type) {
         case "model":
           model = event.model;

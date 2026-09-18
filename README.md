@@ -29,8 +29,21 @@ Postgres instead of failing.
 unmodified on the next request — so reasoning models continue their chain of
 thought across turns, exactly like the two-call example in the OpenRouter docs.
 
-**Fallback.** Requests walk a model chain: the model the client asked for, then
-`OPENROUTER_MODEL`, then each of `OPENROUTER_FALLBACK_MODELS`. It advances on
+**URLs.** Every conversation is addressable at `/c/<id>`, server-rendered, so a
+link can be shared or reopened in another tab and arrives with its full
+transcript on first paint. A new chat starts at `/` and rewrites the address
+bar to `/c/<id>` as soon as the first turn creates the conversation.
+
+**Models.** The catalogue lives in the `models` table, because OpenRouter's
+`:free` ids rotate often — a change should be an `UPDATE`, not a redeploy. The
+fallback chain is every enabled row in `sort_order`; the `is_default` row is
+offered first in the picker. It is read through three tiers — an in-process memo (no I/O), then Redis
+(shared), then Postgres — and `OPENROUTER_MODEL` /
+`OPENROUTER_FALLBACK_MODELS` remain as a bootstrap for when the table is empty
+or unreachable, so a fresh or broken database still answers.
+
+**Fallback.** Requests walk that chain: the model the client asked for, then
+each enabled model in order. It advances on
 429 / 402 / 408 / 5xx / timeouts, and fails fast on 401/403 rather than burning
 through every model with a bad key. While streaming, it only falls back *before*
 the first token reaches the client, so a reader never sees a duplicated answer.
@@ -70,8 +83,8 @@ Full annotated list in [`.env.example`](.env.example). Summary:
 | `OPENROUTER_API_KEY` | **yes** | — | openrouter.ai/keys |
 | `DATABASE_URL` | **yes** | — | Neon Console → Connection string (**pooled**, host has `-pooler`) |
 | `REDIS_URL` | no | — | `redis://` or `rediss://` connection string |
-| `OPENROUTER_MODEL` | no | `google/gemma-4-31b-it:free` | any id from openrouter.ai/models |
-| `OPENROUTER_FALLBACK_MODELS` | no | `google/gemma-4-26b-a4b-it:free` | comma-separated, tried in order |
+| `OPENROUTER_MODEL` | no | first Nemotron | **bootstrap only** — the `models` table is the real source |
+| `OPENROUTER_FALLBACK_MODELS` | no | see `.env.example` | **bootstrap only**, comma-separated |
 | `OPENROUTER_BASE_URL` | no | `https://openrouter.ai/api/v1` | point at a proxy/gateway |
 | `OPENROUTER_REASONING` | no | `true` | `false` turns reasoning off |
 | `OPENROUTER_TIMEOUT_MS` | no | `55000` | must stay under the 60s function limit |
@@ -116,6 +129,13 @@ curl -N http://localhost:3000/api/chat \
   -d '{"message":"How many r'\''s are in the word '\''strawberry'\''?"}'
 ```
 
+### Pages
+
+| Path | Renders |
+| --- | --- |
+| `/` | a new chat |
+| `/c/{id}` | that conversation, server-rendered; 404 if it does not exist |
+
 ### Conversations
 
 | Method | Path | Does |
@@ -125,6 +145,8 @@ curl -N http://localhost:3000/api/chat \
 | `GET` | `/api/conversations/{id}` | conversation + full transcript |
 | `PATCH` | `/api/conversations/{id}` | rename |
 | `DELETE` | `/api/conversations/{id}` | delete (cascades, clears cache) |
+| `GET` | `/api/models` | selectable models + current default |
+| `POST` | `/api/models` | drop the cached catalogue after editing the table |
 | `GET` | `/api/health` | per-dependency readiness |
 
 ## Deploying to Vercel
@@ -150,7 +172,9 @@ models are the shared vocabulary. Nothing below a layer imports from above it.
 ```
 src/
   app/                      HTTP only — parse, delegate, encode
-    page.tsx  layout.tsx  globals.css
+    page.tsx                new chat
+    c/[id]/page.tsx         one conversation, at its own shareable URL
+    not-found.tsx  layout.tsx  globals.css
     api/chat/route.ts       SSE adapter over chat.service
     api/conversations/      list, create, read, rename, delete
     api/health/route.ts
@@ -163,10 +187,10 @@ src/
     env.ts                  environment config, namespaced and lazy
   server/
     db/                     client, rows (mappers), one repository per table
-    cache/                  client, keys, window.cache
+    cache/                  client, keys, window.cache, models.cache
     openrouter/             client (transport), model-chain, reasoning,
                             completion, stream, errors
-    services/               chat.service, history.service
+    services/               chat.service, history.service, models.service
   lib/
     sse.ts                  SSE encode/decode, shared by server and browser
     api-client.ts           the browser's only route knowledge

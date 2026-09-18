@@ -1,9 +1,10 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { APP } from "@/config/constants";
+import { APP, ROUTES } from "@/config/constants";
 import * as api from "@/lib/api-client";
-import type { Conversation } from "@/models";
+import type { Conversation, ModelOption } from "@/models";
 import { Composer } from "./Composer";
 import { Message } from "./Message";
 import type { UiMessage } from "./view-models";
@@ -14,12 +15,28 @@ const SUGGESTIONS = [
   "How many r's are in the word 'strawberry'?",
 ];
 
-export function Chat({ models }: { models: string[] }) {
+interface ChatProps {
+  models: ModelOption[];
+  defaultModel: string;
+  /** Present when rendered at /c/<id>; absent for a new chat at /. */
+  conversationId?: string;
+  initialMessages?: UiMessage[];
+}
+
+export function Chat({
+  models,
+  defaultModel,
+  conversationId: initialConversationId,
+  initialMessages = [],
+}: ChatProps) {
+  const router = useRouter();
   const [conversations, setConversations] = useState<Conversation[]>([]);
-  const [conversationId, setConversationId] = useState<string | null>(null);
-  const [messages, setMessages] = useState<UiMessage[]>([]);
+  const [conversationId, setConversationId] = useState<string | null>(
+    initialConversationId ?? null,
+  );
+  const [messages, setMessages] = useState<UiMessage[]>(initialMessages);
   const [input, setInput] = useState("");
-  const [model, setModel] = useState(models[0] ?? "");
+  const [model, setModel] = useState(defaultModel);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -42,39 +59,38 @@ export function Chat({ models }: { models: string[] }) {
     bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [messages]);
 
-  async function openConversation(id: string) {
+  /** Navigates to the conversation's own URL; the server renders its thread. */
+  function openConversation(id: string) {
+    if (id === conversationId) return;
     abortRef.current?.abort();
-    setErr(null);
-    setConversationId(id);
-    try {
-      const { messages: stored } = await api.getConversation(id);
-      setMessages(
-        stored
-          .filter((message) => message.role !== "system")
-          .map((message) => ({
-            id: String(message.id),
-            role: message.role as UiMessage["role"],
-            content: message.content ?? "",
-            model: message.model,
-          })),
-      );
-    } catch (error) {
-      setErr(error instanceof Error ? error.message : "Could not load that conversation.");
-    }
+    router.push(ROUTES.conversation(id));
   }
 
+  /**
+   * Starts a fresh conversation.
+   *
+   * The local reset is not belt-and-braces: after the first turn the address
+   * bar is rewritten with replaceState, which Next's router does not observe,
+   * so it still believes the pathname is "/" and `push("/")` does nothing.
+   * Without clearing state here, "New chat" would keep the old thread on
+   * screen and the next message would continue that conversation.
+   */
   function newChat() {
     abortRef.current?.abort();
     setConversationId(null);
     setMessages([]);
     setErr(null);
     setInput("");
+    window.history.replaceState(null, "", ROUTES.newChat);
+    router.push(ROUTES.newChat);
   }
 
   async function removeConversation(id: string) {
     setConversations((previous) => previous.filter((c) => c.id !== id));
-    if (id === conversationId) newChat();
     await api.deleteConversation(id).catch(() => {});
+    // Same trap as newChat: the open conversation may only be in the URL.
+    if (id === conversationId) newChat();
+    else router.refresh();
   }
 
   async function send(text: string) {
@@ -114,7 +130,12 @@ export function Chat({ models }: { models: string[] }) {
         switch (event.type) {
           case "start":
             started = true;
-            if (!conversationId) setConversationId(event.conversationId);
+            if (!conversationId) {
+              setConversationId(event.conversationId);
+              // replaceState, not router.replace: a navigation here would
+              // remount the tree and cut the stream we are reading.
+              window.history.replaceState(null, "", ROUTES.conversation(event.conversationId));
+            }
             break;
           case "model":
             patch({ model: event.model });
@@ -188,9 +209,9 @@ export function Chat({ models }: { models: string[] }) {
             value={model}
             onChange={(event) => setModel(event.target.value)}
           >
-            {models.map((name) => (
-              <option key={name} value={name}>
-                {name}
+            {models.map((option) => (
+              <option key={option.id} value={option.id} title={option.id}>
+                {option.label}
               </option>
             ))}
           </select>

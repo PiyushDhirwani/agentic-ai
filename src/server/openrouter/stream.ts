@@ -10,7 +10,6 @@ import {
 } from "@/models";
 import { requestCompletion } from "./client";
 import { OpenRouterError } from "./errors";
-import { modelChain } from "./model-chain";
 import { collectReasoningDetails, mergeReasoningDetails } from "./reasoning";
 
 /** Everything accumulated while reading one model's stream. */
@@ -76,7 +75,8 @@ async function* readStream(
 }
 
 /**
- * Streams a completion across the model chain.
+ * Streams a completion across the given model chain, which the caller
+ * resolves (see models.service).
  *
  * Fallback only applies *before* anything has been emitted. Once tokens have
  * reached the caller, a mid-stream failure is surfaced rather than restarted,
@@ -84,12 +84,13 @@ async function* readStream(
  */
 export async function* streamCompletion(
   messages: ChatMessage[],
-  requestedModel?: string | null,
+  chain: string[],
   signal?: AbortSignal,
 ): AsyncGenerator<ProviderStreamEvent> {
-  const chain = modelChain(requestedModel);
   const attempts: FailedAttempt[] = [];
   let lastError: unknown;
+
+  if (chain.length === 0) throw new OpenRouterError("No models are configured");
 
   for (let i = 0; i < chain.length; i++) {
     const model = chain[i];

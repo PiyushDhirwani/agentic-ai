@@ -1,14 +1,13 @@
 import { Chat } from "@/components/Chat";
-import { env } from "@/config/env";
+import { getCatalogue } from "@/server/services/models.service";
 
 export const dynamic = "force-dynamic";
 
 /**
- * Server component. The model list is read from env here and passed down as a
- * prop — no NEXT_PUBLIC_ variable, so nothing about the configuration is
- * inlined into the browser bundle.
+ * A new, unsaved chat. As soon as the first turn creates a conversation the
+ * URL becomes /c/<id>, so the tab can be shared or reopened.
  */
-export default function Page() {
-  const models = [...new Set([env.openRouter.primaryModel, ...env.openRouter.fallbackModels])];
-  return <Chat models={models} />;
+export default async function Page() {
+  const { options, defaultModel } = await getCatalogue();
+  return <Chat models={options} defaultModel={defaultModel} />;
 }

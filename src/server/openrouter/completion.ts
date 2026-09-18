@@ -1,20 +1,23 @@
 import { EMPTY_USAGE, type ChatMessage, type Completion, type FailedAttempt, toUsage } from "@/models";
 import { requestCompletion } from "./client";
 import { OpenRouterError } from "./errors";
-import { modelChain } from "./model-chain";
 
 /**
- * A non-streaming completion, walking the model chain on retryable failures.
+ * A non-streaming completion, walking the given model chain on retryable
+ * failures. The chain is resolved by the caller (see models.service), so this
+ * module stays unaware of where models are configured.
  */
 export async function complete(
   messages: ChatMessage[],
-  requestedModel?: string | null,
+  chain: string[],
   signal?: AbortSignal,
 ): Promise<Completion> {
   const attempts: FailedAttempt[] = [];
   let lastError: unknown;
 
-  for (const model of modelChain(requestedModel)) {
+  if (chain.length === 0) throw new OpenRouterError("No models are configured");
+
+  for (const model of chain) {
     try {
       const response = await requestCompletion({ model, messages, stream: false, signal });
       const payload = await response.json();
