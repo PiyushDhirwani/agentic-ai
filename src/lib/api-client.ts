@@ -33,6 +33,7 @@ export interface SendMessageOptions {
   conversationId?: string;
   message: string;
   model?: string;
+  webSearch?: boolean;
   signal?: AbortSignal;
 }
 
@@ -50,6 +51,7 @@ export async function* sendMessage(
       conversationId: options.conversationId,
       message: options.message,
       model: options.model,
+      webSearch: options.webSearch,
       stream: true,
     }),
     signal: options.signal,

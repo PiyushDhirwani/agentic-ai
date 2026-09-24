@@ -16,6 +16,16 @@ export function Message({ message }: { message: UiMessage }) {
         </details>
       ) : null}
 
+      {message.activity?.length ? (
+        <div className="activity">
+          {message.activity.map((item, index) => (
+            <span key={`${item.name}-${index}`} data-error={item.isError}>
+              {item.name.replace("__", " · ")}
+            </span>
+          ))}
+        </div>
+      ) : null}
+
       <div className="bubble">
         {isUser ? (
           <div style={{ whiteSpace: "pre-wrap" }}>{message.content}</div>
@@ -26,6 +36,18 @@ export function Message({ message }: { message: UiMessage }) {
           </>
         )}
       </div>
+
+      {!isUser && message.citations?.length ? (
+        <ol className="sources">
+          {message.citations.map((citation) => (
+            <li key={citation.url}>
+              <a href={citation.url} target="_blank" rel="noopener noreferrer">
+                {citation.title ?? new URL(citation.url).hostname}
+              </a>
+            </li>
+          ))}
+        </ol>
+      ) : null}
 
       {!isUser && message.model && !message.pending ? (
         <div className="meta">{message.model}</div>

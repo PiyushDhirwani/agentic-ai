@@ -34,6 +34,49 @@ link can be shared or reopened in another tab and arrives with its full
 transcript on first paint. A new chat starts at `/` and rewrites the address
 bar to `/c/<id>` as soon as the first turn creates the conversation.
 
+**MCP tools.** Remote (Streamable HTTP) MCP servers listed in the `mcp_servers`
+table can be called by the model — Exa is seeded. Tool names are namespaced
+`<serverId>__<tool>` so servers cannot collide, listings are cached, and an
+unreachable server contributes no tools rather than failing the turn. A tool
+that errors reports that back to the model instead of ending the answer. The
+loop is bounded by `MCP_MAX_ITERATIONS`, and tools are withheld on the final
+pass so the model must produce an answer. Secrets stay in the environment: the
+table stores only the *name* of the variable holding a key. Requires a
+tool-calling model, so it is off by default.
+
+**Web search.** Passed alongside the chat completion, in one of two shapes.
+`WEB_SEARCH_MODE=tool` (default) sends
+`tools: [{ type: "openrouter:web_search" }]` — a server tool, so the *model*
+decides whether a search is warranted and a question it already knows costs
+nothing; it also unlocks domain filters and `max_uses`, but needs a
+tool-calling model. `WEB_SEARCH_MODE=plugin` sends `plugins: [{ id: "web" }]`,
+which searches unconditionally and therefore works with **any** model,
+including free ones without tool support. Either way OpenRouter bills each
+search *even on free models*, so it is a per-message toggle in the composer.
+Sources come back as `url_citation` annotations, are stored on the message, and
+render under the answer.
+
+**Semantic recall.** Messages are embedded via OpenRouter's `/embeddings`
+endpoint into a pgvector column and searched by cosine distance, so a question
+can pull in related earlier discussion. Embedding happens in `after()`, once
+the reply is already streaming, so it never delays an answer. Off unless
+`MEMORY_SCOPE` is set; `conversation` recalls older turns of the same chat
+(useful once it outgrows `HISTORY_TURNS`), `global` recalls from every
+conversation — which, with no authentication, means one visitor's messages can
+appear in another's prompt. Recalled text is injected as clearly-labelled
+reference material with an instruction not to obey it, since it is data written
+by someone else.
+
+**Changing the embedding model.** Vectors from two embedding models are not
+comparable, so `model` is part of the `message_embeddings` primary key: searches
+filter on the active model, and rows from any other are invisible rather than
+mixed in. Switching `EMBEDDING_MODEL` therefore needs no migration — the new
+model matches nothing, so everything looks unembedded and backfills itself as
+conversations are used. Recall is thin meanwhile; `GET /api/memory` shows
+`embedded` climbing toward `eligible`, and `DELETE /api/memory?model=<old>`
+reclaims the space. The table is a cache: every row is derivable from
+`messages`, so dropping it costs only the time to re-embed.
+
 **Models.** The catalogue lives in the `models` table, because OpenRouter's
 `:free` ids rotate often — a change should be an `UPDATE`, not a redeploy. The
 fallback chain is every enabled row in `sort_order`; the `is_default` row is
@@ -91,6 +134,28 @@ Full annotated list in [`.env.example`](.env.example). Summary:
 | `HISTORY_TURNS` | no | `50` | exchanges replayed (×2 = messages) |
 | `CACHE_TTL_SECONDS` | no | `86400` | idle lifetime of a cached window |
 | `SYSTEM_PROMPT` | no | none | prepended to every conversation |
+| `MCP_ENABLED` | no | `false` | offer MCP tools to the model |
+| `MCP_MAX_ITERATIONS` | no | `3` | tool rounds per turn |
+| `MCP_TOOLS_TTL_SECONDS` | no | `300` | tool-list cache |
+| `EXA_API_KEY` | no | — | lifts Exa's free rate limit |
+| `WEB_SEARCH_AVAILABLE` | no | `true` | `false` hides the toggle |
+| `WEB_SEARCH_DEFAULT` | no | `false` | search when the request does not say |
+| `WEB_SEARCH_MODE` | no | `tool` | `tool` (model decides) or `plugin` (always) |
+| `WEB_SEARCH_MAX_RESULTS` | no | `5` | results per search |
+| `WEB_SEARCH_MAX_USES` | no | `3` | searches per turn — the cost ceiling |
+| `WEB_SEARCH_ENGINE` | no | auto | `auto`/`native`/`exa`/`firecrawl`/`parallel`/`perplexity` |
+| `WEB_SEARCH_CONTEXT_SIZE` | no | provider | `low` / `medium` / `high` |
+| `WEB_SEARCH_MAX_CHARACTERS` | no | provider | excerpt length |
+| `WEB_SEARCH_MAX_TOTAL_RESULTS` | no | provider | cap across all searches |
+| `WEB_SEARCH_ALLOWED_DOMAINS` | no | — | restrict search to these |
+| `WEB_SEARCH_EXCLUDED_DOMAINS` | no | — | exclude these |
+| `MEMORY_SCOPE` | no | `off` | `off` / `conversation` / `global` — see below |
+| `EMBEDDING_MODEL` | no | `openai/text-embedding-3-small` | changing it re-embeds in the background |
+| `EMBEDDING_DIMENSIONS` | no | model default | Matryoshka truncation to fit `VECTOR(1536)` |
+| `MEMORY_TOP_K` | no | `4` | passages injected per turn |
+| `MEMORY_MIN_SIMILARITY` | no | `0.75` | cosine floor for a match |
+| `MEMORY_MIN_CHARS` | no | `40` | shorter messages are not embedded |
+| `EMBEDDING_DENY_DATA_COLLECTION` | no | `true` | only non-retaining providers |
 | `APP_URL` | no | `VERCEL_URL`, else localhost | OpenRouter `HTTP-Referer` (server-side only) |
 | `APP_TITLE` | no | `agentic-ai` | OpenRouter `X-Title` |
 
@@ -146,6 +211,8 @@ curl -N http://localhost:3000/api/chat \
 | `PATCH` | `/api/conversations/{id}` | rename |
 | `DELETE` | `/api/conversations/{id}` | delete (cascades, clears cache) |
 | `GET` | `/api/models` | selectable models + current default |
+| `GET` | `/api/memory` | recall coverage per embedding model |
+| `DELETE` | `/api/memory?model=` | drop vectors for one model |
 | `POST` | `/api/models` | drop the cached catalogue after editing the table |
 | `GET` | `/api/health` | per-dependency readiness |
 
@@ -188,9 +255,10 @@ src/
   server/
     db/                     client, rows (mappers), one repository per table
     cache/                  client, keys, window.cache, models.cache
-    openrouter/             client (transport), model-chain, reasoning,
-                            completion, stream, errors
-    services/               chat.service, history.service, models.service
+    openrouter/             client (transport), reasoning, tool-calls,
+                            completion, stream, embeddings, errors
+    mcp/                    Streamable-HTTP MCP client
+    services/               chat, history, models, memory, tools
   lib/
     sse.ts                  SSE encode/decode, shared by server and browser
     api-client.ts           the browser's only route knowledge

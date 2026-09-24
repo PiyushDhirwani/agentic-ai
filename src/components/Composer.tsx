@@ -8,9 +8,20 @@ interface Props {
   onSubmit: () => void;
   onStop: () => void;
   busy: boolean;
+  /** Omitted when WEB_SEARCH_AVAILABLE is false, which hides the toggle. */
+  webSearch?: boolean;
+  onToggleWebSearch?: () => void;
 }
 
-export function Composer({ value, onChange, onSubmit, onStop, busy }: Props) {
+export function Composer({
+  value,
+  onChange,
+  onSubmit,
+  onStop,
+  busy,
+  webSearch,
+  onToggleWebSearch,
+}: Props) {
   const ref = useRef<HTMLTextAreaElement>(null);
 
   // Grow the textarea with its content, up to the CSS max-height.
@@ -43,6 +54,26 @@ export function Composer({ value, onChange, onSubmit, onStop, busy }: Props) {
             }
           }}
         />
+        {onToggleWebSearch ? (
+          <button
+            type="button"
+            className="web-toggle"
+            data-on={webSearch}
+            onClick={onToggleWebSearch}
+            aria-pressed={webSearch}
+            title="Search the web before answering (billed per search)"
+          >
+            <svg width="13" height="13" viewBox="0 0 16 16" aria-hidden="true" fill="none">
+              <circle cx="8" cy="8" r="6.2" stroke="currentColor" strokeWidth="1.5" />
+              <path
+                d="M1.8 8h12.4M8 1.8c1.7 1.8 2.6 4 2.6 6.2S9.7 12.4 8 14.2C6.3 12.4 5.4 10.2 5.4 8S6.3 3.6 8 1.8Z"
+                stroke="currentColor"
+                strokeWidth="1.3"
+              />
+            </svg>
+            Web
+          </button>
+        ) : null}
         <button
           type={busy ? "button" : "submit"}
           className="send"
@@ -69,7 +100,10 @@ export function Composer({ value, onChange, onSubmit, onStop, busy }: Props) {
           )}
         </button>
       </form>
-      <p className="hint">Enter to send, Shift+Enter for a new line.</p>
+      <p className="hint">
+        Enter to send, Shift+Enter for a new line.
+        {webSearch ? " Web search is on — each search is billed." : ""}
+      </p>
     </div>
   );
 }

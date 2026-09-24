@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { Chat } from "@/components/Chat";
 import { toUiMessages } from "@/components/view-models";
 import { conversations, messages } from "@/server/db";
+import { env } from "@/config/env";
 import { getCatalogue } from "@/server/services/models.service";
 import { conversationIdSchema } from "@/validation/schemas";
 
@@ -45,6 +46,8 @@ export default async function ConversationPage({ params }: PageProps) {
       defaultModel={conversation.model ?? catalogue.defaultModel}
       conversationId={conversation.id}
       initialMessages={toUiMessages(transcript)}
+      webSearchAvailable={env.webSearch.available}
+      webSearchDefault={env.webSearch.defaultOn}
     />
   );
 }

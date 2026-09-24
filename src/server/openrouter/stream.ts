@@ -1,8 +1,12 @@
 import { frameData, isDone, takeLines, textChunks } from "@/lib/sse";
 import {
   EMPTY_USAGE,
+  mergeCitations,
+  toCitations,
   type ChatMessage,
+  type Citation,
   type FailedAttempt,
+  type ToolCall,
   type ProviderStreamEvent,
   type ReasoningDetail,
   type Usage,
@@ -11,6 +15,7 @@ import {
 import { requestCompletion } from "./client";
 import { OpenRouterError } from "./errors";
 import { collectReasoningDetails, mergeReasoningDetails } from "./reasoning";
+import { collectToolCalls, mergeToolCalls } from "./tool-calls";
 
 /** Everything accumulated while reading one model's stream. */
 interface Accumulator {
@@ -19,6 +24,8 @@ interface Accumulator {
   model: string;
   usage: Usage;
   details: Map<number, ReasoningDetail>;
+  citations: Citation[];
+  toolCalls: Map<number, ToolCall>;
 }
 
 /** Reads one model's SSE stream, yielding deltas as they arrive. */
@@ -57,8 +64,22 @@ async function* readStream(
       if (frame.model) acc.model = frame.model;
       if (frame.usage) acc.usage = toUsage(frame.usage);
 
-      const delta = frame.choices?.[0]?.delta;
+      const choice = frame.choices?.[0];
+      // Sources can arrive on the delta or on the finished message, depending
+      // on the provider; take them from wherever they appear, once each.
+      const incoming = toCitations(choice?.delta?.annotations ?? choice?.message?.annotations);
+      if (incoming.length > 0) {
+        const before = acc.citations.length;
+        acc.citations = mergeCitations(acc.citations, incoming);
+        if (acc.citations.length > before) {
+          yield { type: "citations", citations: acc.citations };
+        }
+      }
+
+      const delta = choice?.delta;
       if (!delta) continue;
+
+      mergeToolCalls(acc.toolCalls, delta.tool_calls);
 
       if (typeof delta.reasoning === "string" && delta.reasoning.length > 0) {
         acc.reasoning += delta.reasoning;
@@ -85,8 +106,9 @@ async function* readStream(
 export async function* streamCompletion(
   messages: ChatMessage[],
   chain: string[],
-  signal?: AbortSignal,
+  options: { webSearch?: boolean; tools?: unknown[]; signal?: AbortSignal } = {},
 ): AsyncGenerator<ProviderStreamEvent> {
+  const { webSearch = false, tools = [], signal } = options;
   const attempts: FailedAttempt[] = [];
   let lastError: unknown;
 
@@ -100,11 +122,20 @@ export async function* streamCompletion(
       model,
       usage: EMPTY_USAGE,
       details: new Map(),
+      citations: [],
+      toolCalls: new Map(),
     };
     let emitted = false;
 
     try {
-      const response = await requestCompletion({ model, messages, stream: true, signal });
+      const response = await requestCompletion({
+        model,
+        messages,
+        stream: true,
+        webSearch,
+        tools,
+        signal,
+      });
       if (!response.body) {
         throw new OpenRouterError(`${model}: no response body`, undefined, true);
       }
@@ -115,8 +146,14 @@ export async function* streamCompletion(
         emitted = true;
         yield event;
       }
+      // Tool-call fragments are not yielded, so mark them as emitted too:
+      // retrying another model after them would duplicate the request.
+      if (acc.toolCalls.size > 0) emitted = true;
 
-      if (acc.content.length === 0 && acc.reasoning.length === 0) {
+      const toolCalls = collectToolCalls(acc.toolCalls);
+
+      // A turn that only asks for tools carries no text; that is not empty.
+      if (acc.content.length === 0 && acc.reasoning.length === 0 && toolCalls.length === 0) {
         throw new OpenRouterError(`${model}: empty stream`, undefined, true);
       }
 
@@ -128,6 +165,8 @@ export async function* streamCompletion(
           reasoningDetails: collectReasoningDetails(acc.details),
           model: acc.model,
           usage: acc.usage,
+          citations: acc.citations,
+          toolCalls,
           attempts,
         },
       };

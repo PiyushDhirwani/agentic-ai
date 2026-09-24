@@ -1,4 +1,11 @@
-import type { Conversation, Message, ReasoningDetail, Role } from "@/models";
+import type {
+  Citation,
+  Conversation,
+  Message,
+  ReasoningDetail,
+  Role,
+  ToolCall,
+} from "@/models";
 
 /** Raw shapes as Postgres returns them, and the mappers into domain models. */
 
@@ -8,6 +15,10 @@ export interface MessageRow {
   role: Role;
   content: string | null;
   reasoning_details: ReasoningDetail[] | null;
+  citations: Citation[] | null;
+  tool_calls: ToolCall[] | null;
+  tool_call_id: string | null;
+  tool_name: string | null;
   model: string | null;
   created_at: string | Date;
 }
@@ -29,6 +40,10 @@ export function toMessage(row: MessageRow): Message {
     role: row.role,
     content: row.content,
     reasoningDetails: row.reasoning_details ?? null,
+    citations: row.citations ?? null,
+    toolCalls: row.tool_calls ?? null,
+    toolCallId: row.tool_call_id ?? null,
+    toolName: row.tool_name ?? null,
     model: row.model,
     createdAt: new Date(row.created_at).toISOString(),
   };

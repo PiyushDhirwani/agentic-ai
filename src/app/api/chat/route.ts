@@ -1,8 +1,9 @@
-import type { NextRequest } from "next/server";
+import { after, type NextRequest } from "next/server";
 import { SSE } from "@/config/constants";
 import { error, json, readJson, validationError } from "@/lib/http";
 import { encodeDone, encodeFrame } from "@/lib/sse";
 import * as chatService from "@/server/services/chat.service";
+import { indexPending } from "@/server/services/memory.service";
 import { chatRequestSchema } from "@/validation/schemas";
 
 export const runtime = "nodejs";
@@ -41,6 +42,14 @@ export async function POST(request: NextRequest) {
     return error(chatService.describeFailure(err), 500);
   }
 
+  // Embedding runs once the response is on its way, so it never delays a
+  // reply. A no-op unless MEMORY_SCOPE is set.
+  after(async () => {
+    await indexPending(conversationId).catch((err) =>
+      console.error("[chat] background indexing failed:", err),
+    );
+  });
+
   if (!wantsStream) {
     try {
       const result = await chatService.runTurn(conversationId, turn, prompt, request.signal);
@@ -52,6 +61,7 @@ export async function POST(request: NextRequest) {
         model: result.completion.model,
         usage: result.completion.usage,
         historyMessages: result.historyMessages,
+        recalled: prompt.recalled,
         fallbacks: result.completion.attempts,
       });
     } catch (err) {

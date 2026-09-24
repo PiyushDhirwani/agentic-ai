@@ -1,3 +1,5 @@
+import type { Citation } from "./citation";
+import type { ToolCall } from "./tool";
 import type { ReasoningDetail } from "./reasoning";
 import type { Role } from "./role";
 import type { Usage } from "./usage";
@@ -9,6 +11,10 @@ export interface Message {
   role: Role;
   content: string | null;
   reasoningDetails: ReasoningDetail[] | null;
+  citations: Citation[] | null;
+  toolCalls: ToolCall[] | null;
+  toolCallId: string | null;
+  toolName: string | null;
   model: string | null;
   createdAt: string;
 }
@@ -19,6 +25,10 @@ export interface NewMessage {
   role: Role;
   content: string | null;
   reasoningDetails?: ReasoningDetail[] | null;
+  citations?: Citation[] | null;
+  toolCalls?: ToolCall[] | null;
+  toolCallId?: string | null;
+  toolName?: string | null;
   model?: string | null;
   usage?: Usage | null;
 }

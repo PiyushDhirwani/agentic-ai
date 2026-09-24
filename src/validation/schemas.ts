@@ -11,6 +11,8 @@ export const chatRequestSchema = z.object({
   model: z.string().min(1).max(LIMITS.modelIdChars).optional(),
   systemPrompt: z.string().max(LIMITS.systemPromptChars).optional(),
   stream: z.boolean().optional().default(true),
+  /** Omit to use WEB_SEARCH_DEFAULT. */
+  webSearch: z.boolean().optional(),
 });
 
 export const createConversationSchema = z.object({

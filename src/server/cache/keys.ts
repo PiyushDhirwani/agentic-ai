@@ -7,4 +7,6 @@ export const cacheKeys = {
   warm: (conversationId: string) => `${CACHE_KEYS.prefix}:${conversationId}:warm`,
   /** The model catalogue, shared by every conversation. */
   models: () => `${CACHE_KEYS.modelsKey}`,
+  /** Tool listings per MCP server, so every turn need not re-handshake. */
+  tools: (serverId: string) => `${CACHE_KEYS.toolsKey}:${serverId}`,
 };

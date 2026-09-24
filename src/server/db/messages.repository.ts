@@ -6,7 +6,8 @@ import { type MessageRow, toMessage } from "./rows";
 export async function findRecent(conversationId: string, limit: number): Promise<Message[]> {
   const rows = (await sql()`
     SELECT * FROM (
-      SELECT id, conversation_id, role, content, reasoning_details, model, created_at
+      SELECT id, conversation_id, role, content, reasoning_details, citations,
+             tool_calls, tool_call_id, tool_name, model, created_at
       FROM messages
       WHERE conversation_id = ${conversationId}
       ORDER BY id DESC
@@ -20,7 +21,8 @@ export async function findRecent(conversationId: string, limit: number): Promise
 /** Full transcript, oldest-first. For the read API, not for inference. */
 export async function findAll(conversationId: string): Promise<Message[]> {
   const rows = (await sql()`
-    SELECT id, conversation_id, role, content, reasoning_details, model, created_at
+    SELECT id, conversation_id, role, content, reasoning_details, citations,
+             tool_calls, tool_call_id, tool_name, model, created_at
     FROM messages
     WHERE conversation_id = ${conversationId}
     ORDER BY id ASC
@@ -31,17 +33,23 @@ export async function findAll(conversationId: string): Promise<Message[]> {
 export async function insert(message: NewMessage): Promise<Message> {
   const rows = (await sql()`
     INSERT INTO messages
-      (conversation_id, role, content, reasoning_details, model, prompt_tokens, completion_tokens)
+      (conversation_id, role, content, reasoning_details, citations,
+       tool_calls, tool_call_id, tool_name, model, prompt_tokens, completion_tokens)
     VALUES (
       ${message.conversationId},
       ${message.role},
       ${message.content},
       ${message.reasoningDetails ? JSON.stringify(message.reasoningDetails) : null}::jsonb,
+      ${message.citations?.length ? JSON.stringify(message.citations) : null}::jsonb,
+      ${message.toolCalls?.length ? JSON.stringify(message.toolCalls) : null}::jsonb,
+      ${message.toolCallId ?? null},
+      ${message.toolName ?? null},
       ${message.model ?? null},
       ${message.usage?.promptTokens ?? null},
       ${message.usage?.completionTokens ?? null}
     )
-    RETURNING id, conversation_id, role, content, reasoning_details, model, created_at
+    RETURNING id, conversation_id, role, content, reasoning_details, citations,
+              tool_calls, tool_call_id, tool_name, model, created_at
   `) as MessageRow[];
   return toMessage(rows[0]);
 }

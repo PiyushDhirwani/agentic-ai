@@ -1,4 +1,5 @@
 import { Chat } from "@/components/Chat";
+import { env } from "@/config/env";
 import { getCatalogue } from "@/server/services/models.service";
 
 export const dynamic = "force-dynamic";
@@ -9,5 +10,12 @@ export const dynamic = "force-dynamic";
  */
 export default async function Page() {
   const { options, defaultModel } = await getCatalogue();
-  return <Chat models={options} defaultModel={defaultModel} />;
+  return (
+    <Chat
+      models={options}
+      defaultModel={defaultModel}
+      webSearchAvailable={env.webSearch.available}
+      webSearchDefault={env.webSearch.defaultOn}
+    />
+  );
 }

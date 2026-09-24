@@ -1,5 +1,13 @@
-import { EMPTY_USAGE, type ChatMessage, type Completion, type FailedAttempt, toUsage } from "@/models";
+import {
+  EMPTY_USAGE,
+  toCitations,
+  toUsage,
+  type ChatMessage,
+  type Completion,
+  type FailedAttempt,
+} from "@/models";
 import { requestCompletion } from "./client";
+import { toToolCalls } from "./tool-calls";
 import { OpenRouterError } from "./errors";
 
 /**
@@ -10,8 +18,9 @@ import { OpenRouterError } from "./errors";
 export async function complete(
   messages: ChatMessage[],
   chain: string[],
-  signal?: AbortSignal,
+  options: { webSearch?: boolean; tools?: unknown[]; signal?: AbortSignal } = {},
 ): Promise<Completion> {
+  const { webSearch = false, tools = [], signal } = options;
   const attempts: FailedAttempt[] = [];
   let lastError: unknown;
 
@@ -19,7 +28,14 @@ export async function complete(
 
   for (const model of chain) {
     try {
-      const response = await requestCompletion({ model, messages, stream: false, signal });
+      const response = await requestCompletion({
+        model,
+        messages,
+        stream: false,
+        webSearch,
+        tools,
+        signal,
+      });
       const payload = await response.json();
 
       if (payload.error) {
@@ -33,12 +49,16 @@ export async function complete(
       const choice = payload.choices?.[0]?.message;
       if (!choice) throw new OpenRouterError(`${model}: empty response`, undefined, true);
 
+      const toolCalls = toToolCalls(choice.tool_calls);
+
       return {
         content: choice.content ?? "",
         reasoning: choice.reasoning ?? "",
         reasoningDetails: choice.reasoning_details ?? null,
         model: payload.model ?? model,
         usage: payload.usage ? toUsage(payload.usage) : EMPTY_USAGE,
+        citations: toCitations(choice.annotations),
+        toolCalls,
         attempts,
       };
     } catch (error) {

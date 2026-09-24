@@ -21,6 +21,8 @@ interface ChatProps {
   /** Present when rendered at /c/<id>; absent for a new chat at /. */
   conversationId?: string;
   initialMessages?: UiMessage[];
+  webSearchAvailable: boolean;
+  webSearchDefault: boolean;
 }
 
 export function Chat({
@@ -28,6 +30,8 @@ export function Chat({
   defaultModel,
   conversationId: initialConversationId,
   initialMessages = [],
+  webSearchAvailable,
+  webSearchDefault,
 }: ChatProps) {
   const router = useRouter();
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -37,6 +41,7 @@ export function Chat({
   const [messages, setMessages] = useState<UiMessage[]>(initialMessages);
   const [input, setInput] = useState("");
   const [model, setModel] = useState(defaultModel);
+  const [webSearch, setWebSearch] = useState(webSearchDefault);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -118,6 +123,7 @@ export function Chat({
 
     let content = "";
     let reasoning = "";
+    let activity: { name: string; isError?: boolean }[] = [];
     let started = false;
 
     try {
@@ -125,6 +131,7 @@ export function Chat({
         conversationId: conversationId ?? undefined,
         message: prompt,
         model: model || undefined,
+        webSearch,
         signal: controller.signal,
       })) {
         switch (event.type) {
@@ -147,6 +154,21 @@ export function Chat({
           case "delta":
             content += event.text;
             patch({ content });
+            break;
+          case "citations":
+            patch({ citations: event.citations });
+            break;
+          case "tool_call":
+            activity = [...activity, ...event.calls.map((call) => ({ name: call.name }))];
+            patch({ activity });
+            break;
+          case "tool_result":
+            // Mark the matching entries done, so failures are visible.
+            activity = activity.map((item) => {
+              const result = event.results.find((candidate) => candidate.name === item.name);
+              return result ? { ...item, isError: result.isError } : item;
+            });
+            patch({ activity });
             break;
           case "done":
             patch({ pending: false, model: event.model });
@@ -250,6 +272,10 @@ export function Chat({
           onSubmit={() => void send(input)}
           onStop={() => abortRef.current?.abort()}
           busy={busy}
+          webSearch={webSearch}
+          onToggleWebSearch={
+            webSearchAvailable ? () => setWebSearch((previous) => !previous) : undefined
+          }
         />
       </main>
     </div>
